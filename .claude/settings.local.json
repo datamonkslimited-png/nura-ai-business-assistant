@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Recurse \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\")",
+      "Bash(Select-Object FullName)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\\\\frontend\\\\src\\\\app\\\\\\(dashboard\\)\\\\customers\\\\[id]\" \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\\\\frontend\\\\src\\\\app\\\\\\(dashboard\\)\\\\bookings\\\\calendar\" \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\\\\frontend\\\\src\\\\app\\\\\\(dashboard\\)\\\\branches\" \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\\\\frontend\\\\src\\\\app\\\\\\(dashboard\\)\\\\staff\" \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\\\\frontend\\\\src\\\\app\\\\\\(dashboard\\)\\\\billing\" \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\\\\frontend\\\\src\\\\app\\\\\\(dashboard\\)\\\\integrations\" \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\nura\\\\frontend\\\\src\\\\app\\\\\\(dashboard\\)\\\\ai-settings\" 2>&1; echo \"Done\")",
+      "Bash(xargs grep -l \"TODO\\\\|pass$\\\\|raise NotImplementedError\")",
+      "Bash(xargs grep -l \"TODO\\\\|// TODO\")",
+      "Bash(npx tsc *)",
+      "Read(//c/Users/selph/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/789f5092-e2b3-492c-a228-9aa666cab631/297d08fc-e7f4-43b1-ad1d-d1288f14de29/skills/docx/**)",
+      "Bash(python scripts/office/unpack.py \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\DataMonks Frozen Scope v2 1.docx\" unpacked_scope/)",
+      "Bash(extract-text \"C:\\\\Users\\\\selph\\\\Claude\\\\Projects\\\\NURA AI business assistant\\\\DataMonks Frozen Scope v2 1.docx\")",
+      "Bash(py -3 -c ' *)",
+      "Bash(which python3 *)",
+      "Bash(python3 -c ' *)"
+    ]
+  }
+}
