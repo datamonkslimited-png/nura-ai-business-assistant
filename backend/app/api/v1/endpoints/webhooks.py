@@ -4,6 +4,7 @@ WhatsApp Cloud API webhook — verification + incoming message handling.
 import hashlib
 import hmac
 import json
+from json import JSONDecodeError
 from fastapi import APIRouter, Request, Response, HTTPException, Depends, BackgroundTasks
 from loguru import logger
 
@@ -49,7 +50,10 @@ async def receive_whatsapp_message(
     raw_body = await request.body()
     _verify_meta_signature(request, raw_body)
 
-    payload = json.loads(raw_body)
+    try:
+        payload = json.loads(raw_body)
+    except JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
     logger.debug(f"WhatsApp payload: {payload}")
 
     # 2. Extract the entry list
@@ -75,6 +79,10 @@ async def receive_whatsapp_message(
                 msg_id      = msg.get("id")
 
                 contact_name = contacts[0]["profile"]["name"] if contacts else "Unknown"
+
+                if msg_id and await _is_duplicate_message(msg_id):
+                    logger.info(f"Duplicate WhatsApp message ignored: {msg_id}")
+                    continue
 
                 # Process in background to return 200 quickly (Meta requires fast response)
                 background_tasks.add_task(
@@ -110,3 +118,16 @@ def _verify_meta_signature(request: Request, raw_body: bytes):
 
     if not hmac.compare_digest(f"sha256={expected}", signature):
         raise HTTPException(status_code=403, detail="Invalid signature")
+
+
+async def _is_duplicate_message(message_id: str) -> bool:
+    """Return True when a WhatsApp message ID has already been persisted."""
+    from sqlalchemy import select
+    from app.core.database import AsyncSessionLocal
+    from app.models.message import Message
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Message.id).where(Message.wa_message_id == message_id).limit(1)
+        )
+        return result.scalar_one_or_none() is not None

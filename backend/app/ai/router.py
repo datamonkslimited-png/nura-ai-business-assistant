@@ -801,6 +801,7 @@ async def process_whatsapp_message(
             inbound=text,
             outbound=reply,
             intent=intent.value if intent else "unknown",
+            wa_message_id=msg_id,
         )
 
 
@@ -904,6 +905,7 @@ async def _log_message(
     outbound: str,
     intent: str,
     ai_stage: str = "haiku",
+    wa_message_id: str | None = None,
 ):
     """Persist conversation + messages to DB."""
     from app.core.database import AsyncSessionLocal
@@ -954,6 +956,7 @@ async def _log_message(
         inbound_msg = Message(
             tenant_id=tid,
             conversation_id=conversation.id,
+            wa_message_id=wa_message_id,
             direction=MessageDirection.inbound,
             content=inbound,
             ai_stage=None,
