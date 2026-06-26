@@ -1,5 +1,5 @@
 import enum
-from sqlalchemy import Column, String, Text, Boolean, Enum as SAEnum
+from sqlalchemy import Column, String, Text, Boolean, Enum as SAEnum, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.models.base import Base, TimestampMixin, uuid_pk
@@ -44,5 +44,15 @@ class Message(Base, TimestampMixin):
     message_type = Column(String(30), default="text")
     ai_stage = Column(String(30))   # deterministic | haiku | sonnet
     is_read = Column(Boolean, default=False)
+
+    __table_args__ = (
+        Index(
+            "uq_messages_tenant_inbound_wa_message_id",
+            "tenant_id",
+            "wa_message_id",
+            unique=True,
+            postgresql_where=wa_message_id.isnot(None) & (direction == MessageDirection.inbound),
+        ),
+    )
 
     conversation = relationship("Conversation", back_populates="messages")

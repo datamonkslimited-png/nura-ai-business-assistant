@@ -692,6 +692,17 @@ async def process_whatsapp_message(
         logger.info(f"Agent is OFF for tenant {tenant['id']} — not processing message")
         return
 
+    conversation_id = await _reserve_inbound_message(
+        tenant_id=tenant["id"],
+        from_number=from_number,
+        contact_name=contact_name,
+        inbound=text,
+        wa_message_id=msg_id,
+    )
+    if conversation_id is None:
+        logger.info(f"Duplicate WhatsApp message skipped before AI processing: {msg_id}")
+        return
+
     business_context = tenant.get("business_context", {})
 
     # Load conversation history
@@ -802,6 +813,8 @@ async def process_whatsapp_message(
             outbound=reply,
             intent=intent.value if intent else "unknown",
             wa_message_id=msg_id,
+            conversation_id=conversation_id,
+            inbound_already_logged=True,
         )
 
 
@@ -897,6 +910,79 @@ async def _get_conversation_state(from_number: str, tenant_id: str):
         return state
 
 
+async def _reserve_inbound_message(
+    tenant_id: str,
+    from_number: str,
+    contact_name: str,
+    inbound: str,
+    wa_message_id: str | None,
+) -> str | None:
+    """
+    Persist the inbound WhatsApp message before AI work starts.
+    Returns the conversation ID, or None when the message is a duplicate.
+    """
+    from sqlalchemy import select
+    from sqlalchemy.exc import IntegrityError
+    from app.core.database import AsyncSessionLocal
+    from app.models.customer import Customer
+    from app.models.message import Conversation, ConversationStatus, Message, MessageDirection
+
+    async with AsyncSessionLocal() as db:
+        tid = uuid.UUID(tenant_id)
+
+        cust_result = await db.execute(
+            select(Customer)
+            .where(Customer.tenant_id == tid)
+            .where(Customer.phone == from_number)
+        )
+        customer = cust_result.scalar_one_or_none()
+        if not customer:
+            customer = Customer(
+                tenant_id=tid,
+                phone=from_number,
+                name=contact_name or from_number,
+            )
+            db.add(customer)
+            await db.flush()
+
+        conv_result = await db.execute(
+            select(Conversation)
+            .where(Conversation.tenant_id == tid)
+            .where(Conversation.customer_phone == from_number)
+            .where(Conversation.status != ConversationStatus.resolved)
+            .order_by(Conversation.created_at.desc())
+            .limit(1)
+        )
+        conversation = conv_result.scalar_one_or_none()
+        if not conversation:
+            conversation = Conversation(
+                tenant_id=tid,
+                customer_id=customer.id,
+                customer_phone=from_number,
+                status=ConversationStatus.bot,
+            )
+            db.add(conversation)
+            await db.flush()
+
+        inbound_msg = Message(
+            tenant_id=tid,
+            conversation_id=conversation.id,
+            wa_message_id=wa_message_id,
+            direction=MessageDirection.inbound,
+            content=inbound,
+            ai_stage=None,
+        )
+        db.add(inbound_msg)
+
+        try:
+            await db.commit()
+        except IntegrityError:
+            await db.rollback()
+            return None
+
+        return str(conversation.id)
+
+
 async def _log_message(
     tenant_id: str,
     from_number: str,
@@ -906,6 +992,8 @@ async def _log_message(
     intent: str,
     ai_stage: str = "haiku",
     wa_message_id: str | None = None,
+    conversation_id: str | None = None,
+    inbound_already_logged: bool = False,
 ):
     """Persist conversation + messages to DB."""
     from app.core.database import AsyncSessionLocal
@@ -932,16 +1020,27 @@ async def _log_message(
             db.add(customer)
             await db.flush()
 
+        conversation = None
+        if conversation_id:
+            conv_result = await db.execute(
+                select(Conversation)
+                .where(Conversation.tenant_id == tid)
+                .where(Conversation.id == uuid.UUID(conversation_id))
+                .limit(1)
+            )
+            conversation = conv_result.scalar_one_or_none()
+
         # Find open conversation or create new
-        conv_result = await db.execute(
-            select(Conversation)
-            .where(Conversation.tenant_id == tid)
-            .where(Conversation.customer_phone == from_number)
-            .where(Conversation.status != ConversationStatus.resolved)
-            .order_by(Conversation.created_at.desc())
-            .limit(1)
-        )
-        conversation = conv_result.scalar_one_or_none()
+        if not conversation:
+            conv_result = await db.execute(
+                select(Conversation)
+                .where(Conversation.tenant_id == tid)
+                .where(Conversation.customer_phone == from_number)
+                .where(Conversation.status != ConversationStatus.resolved)
+                .order_by(Conversation.created_at.desc())
+                .limit(1)
+            )
+            conversation = conv_result.scalar_one_or_none()
         if not conversation:
             conversation = Conversation(
                 tenant_id=tid,
@@ -952,16 +1051,16 @@ async def _log_message(
             db.add(conversation)
             await db.flush()
 
-        # Save inbound message
-        inbound_msg = Message(
-            tenant_id=tid,
-            conversation_id=conversation.id,
-            wa_message_id=wa_message_id,
-            direction=MessageDirection.inbound,
-            content=inbound,
-            ai_stage=None,
-        )
-        db.add(inbound_msg)
+        if not inbound_already_logged:
+            inbound_msg = Message(
+                tenant_id=tid,
+                conversation_id=conversation.id,
+                wa_message_id=wa_message_id,
+                direction=MessageDirection.inbound,
+                content=inbound,
+                ai_stage=None,
+            )
+            db.add(inbound_msg)
 
         # Save outbound message
         outbound_msg = Message(

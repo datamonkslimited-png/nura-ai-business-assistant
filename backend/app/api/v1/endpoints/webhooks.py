@@ -72,6 +72,10 @@ async def receive_whatsapp_message(
             metadata      = value.get("metadata", {})
             contacts      = value.get("contacts", [])
             phone_number_id = metadata.get("phone_number_id", "")
+            tenant_id = await _get_tenant_id_by_phone_number_id(phone_number_id)
+            if not tenant_id:
+                logger.warning(f"No tenant found for WhatsApp phone_number_id: {phone_number_id}")
+                continue
 
             for msg in messages_list:
                 from_number = msg.get("from")
@@ -80,7 +84,7 @@ async def receive_whatsapp_message(
 
                 contact_name = contacts[0]["profile"]["name"] if contacts else "Unknown"
 
-                if msg_id and await _is_duplicate_message(msg_id):
+                if msg_id and await _is_duplicate_message(tenant_id, msg_id):
                     logger.info(f"Duplicate WhatsApp message ignored: {msg_id}")
                     continue
 
@@ -120,14 +124,36 @@ def _verify_meta_signature(request: Request, raw_body: bytes):
         raise HTTPException(status_code=403, detail="Invalid signature")
 
 
-async def _is_duplicate_message(message_id: str) -> bool:
-    """Return True when a WhatsApp message ID has already been persisted."""
+async def _get_tenant_id_by_phone_number_id(phone_number_id: str) -> str | None:
+    """Return tenant ID for a WhatsApp phone_number_id, or None when unknown."""
     from sqlalchemy import select
     from app.core.database import AsyncSessionLocal
-    from app.models.message import Message
+    from app.models.tenant import Tenant
+
+    if not phone_number_id:
+        return None
 
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            select(Message.id).where(Message.wa_message_id == message_id).limit(1)
+            select(Tenant.id).where(Tenant.wa_phone_number_id == phone_number_id).limit(1)
+        )
+        tenant_id = result.scalar_one_or_none()
+        return str(tenant_id) if tenant_id else None
+
+
+async def _is_duplicate_message(tenant_id: str, message_id: str) -> bool:
+    """Return True when a tenant has already persisted this WhatsApp message ID."""
+    import uuid
+    from sqlalchemy import select
+    from app.core.database import AsyncSessionLocal
+    from app.models.message import Message, MessageDirection
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(
+            select(Message.id)
+            .where(Message.tenant_id == uuid.UUID(tenant_id))
+            .where(Message.wa_message_id == message_id)
+            .where(Message.direction == MessageDirection.inbound)
+            .limit(1)
         )
         return result.scalar_one_or_none() is not None

@@ -19,6 +19,7 @@ from app.api.v1.endpoints import webhooks
 
 SECRET = "test-meta-secret"
 VERIFY_TOKEN = "test-verify-token"
+TENANT_ID = "11111111-1111-1111-1111-111111111111"
 
 
 @pytest.fixture()
@@ -139,10 +140,15 @@ def test_valid_hmac_post_accepts_payload(client, monkeypatch):
     async def fake_process_whatsapp_message(**kwargs):
         calls.append(kwargs)
 
-    async def fake_is_duplicate_message(message_id: str) -> bool:
+    async def fake_get_tenant_id_by_phone_number_id(phone_number_id: str):
+        return TENANT_ID
+
+    async def fake_is_duplicate_message(tenant_id: str, message_id: str) -> bool:
+        assert tenant_id == TENANT_ID
         return False
 
     monkeypatch.setattr(webhooks, "process_whatsapp_message", fake_process_whatsapp_message)
+    monkeypatch.setattr(webhooks, "_get_tenant_id_by_phone_number_id", fake_get_tenant_id_by_phone_number_id)
     monkeypatch.setattr(webhooks, "_is_duplicate_message", fake_is_duplicate_message)
 
     response = post_signed(client, text_payload(msg_id="wamid.valid-hmac"))
@@ -218,10 +224,16 @@ def test_normal_customer_text_message_schedules_router_with_expected_fields(clie
     async def fake_process_whatsapp_message(**kwargs):
         calls.append(kwargs)
 
-    async def fake_is_duplicate_message(message_id: str) -> bool:
+    async def fake_get_tenant_id_by_phone_number_id(phone_number_id: str):
+        assert phone_number_id == "phone-normal"
+        return TENANT_ID
+
+    async def fake_is_duplicate_message(tenant_id: str, message_id: str) -> bool:
+        assert tenant_id == TENANT_ID
         return False
 
     monkeypatch.setattr(webhooks, "process_whatsapp_message", fake_process_whatsapp_message)
+    monkeypatch.setattr(webhooks, "_get_tenant_id_by_phone_number_id", fake_get_tenant_id_by_phone_number_id)
     monkeypatch.setattr(webhooks, "_is_duplicate_message", fake_is_duplicate_message)
 
     response = post_signed(
@@ -254,10 +266,15 @@ def test_duplicate_whatsapp_message_delivery_is_ignored(client, monkeypatch):
         calls.append(kwargs)
         seen_message_ids.add(kwargs["msg_id"])
 
-    async def fake_is_duplicate_message(message_id: str) -> bool:
+    async def fake_get_tenant_id_by_phone_number_id(phone_number_id: str):
+        return TENANT_ID
+
+    async def fake_is_duplicate_message(tenant_id: str, message_id: str) -> bool:
+        assert tenant_id == TENANT_ID
         return message_id in seen_message_ids
 
     monkeypatch.setattr(webhooks, "process_whatsapp_message", fake_process_whatsapp_message)
+    monkeypatch.setattr(webhooks, "_get_tenant_id_by_phone_number_id", fake_get_tenant_id_by_phone_number_id)
     monkeypatch.setattr(webhooks, "_is_duplicate_message", fake_is_duplicate_message)
 
     payload = text_payload(msg_id="wamid.duplicate")
@@ -268,6 +285,28 @@ def test_duplicate_whatsapp_message_delivery_is_ignored(client, monkeypatch):
     assert second.status_code == 200
     assert len(calls) == 1
     assert calls[0]["msg_id"] == "wamid.duplicate"
+
+
+def test_unknown_phone_number_id_webhook_returns_200_without_scheduling(client, monkeypatch):
+    calls = []
+
+    async def fake_process_whatsapp_message(**kwargs):
+        calls.append(kwargs)
+
+    async def fake_get_tenant_id_by_phone_number_id(phone_number_id: str):
+        return None
+
+    monkeypatch.setattr(webhooks, "process_whatsapp_message", fake_process_whatsapp_message)
+    monkeypatch.setattr(webhooks, "_get_tenant_id_by_phone_number_id", fake_get_tenant_id_by_phone_number_id)
+
+    response = post_signed(
+        client,
+        text_payload(phone_number_id="unknown-phone", msg_id="wamid.unknown-webhook"),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert calls == []
 
 
 @pytest.mark.asyncio
@@ -304,3 +343,62 @@ async def test_unknown_phone_number_id_stops_before_sending_or_logging(monkeypat
     )
 
     assert calls == {"tenant_lookup": 1, "send": 0, "log": 0}
+
+
+@pytest.mark.asyncio
+async def test_duplicate_reserved_inbound_message_stops_before_ai_or_whatsapp_send(monkeypatch):
+    calls = {"reserve": 0, "haiku": 0, "sonnet": 0, "send": 0, "log": 0}
+
+    async def fake_get_tenant_by_phone_id(phone_number_id: str):
+        return {
+            "id": TENANT_ID,
+            "wa_access_token": "test-token",
+            "business_context": {"name": "Test Bakery"},
+        }
+
+    class FakeAgentToggle:
+        async def is_enabled(self, tenant_id: str) -> bool:
+            return True
+
+    async def fake_reserve_inbound_message(*args, **kwargs):
+        calls["reserve"] += 1
+        return None
+
+    async def fake_classify_with_haiku(*args, **kwargs):
+        calls["haiku"] += 1
+        raise AssertionError("AI should not run for duplicate messages")
+
+    async def fake_reply_with_sonnet(*args, **kwargs):
+        calls["sonnet"] += 1
+        raise AssertionError("AI should not run for duplicate messages")
+
+    def fake_get_whatsapp_client(*args, **kwargs):
+        calls["send"] += 1
+        raise AssertionError("WhatsApp should not be called for duplicate messages")
+
+    async def fake_log_message(*args, **kwargs):
+        calls["log"] += 1
+
+    monkeypatch.setattr(ai_router, "_get_tenant_by_phone_id", fake_get_tenant_by_phone_id)
+    monkeypatch.setattr("app.services.agent_toggle_service.agent_toggle", FakeAgentToggle())
+    monkeypatch.setattr(ai_router, "_reserve_inbound_message", fake_reserve_inbound_message)
+    monkeypatch.setattr(ai_router, "classify_with_haiku", fake_classify_with_haiku)
+    monkeypatch.setattr(ai_router, "reply_with_sonnet", fake_reply_with_sonnet)
+    monkeypatch.setattr(ai_router, "get_whatsapp_client", fake_get_whatsapp_client)
+    monkeypatch.setattr(ai_router, "_log_message", fake_log_message)
+
+    await ai_router.process_whatsapp_message(
+        phone_number_id="phone-123",
+        from_number="254733333333",
+        msg={
+            "from": "254733333333",
+            "id": "wamid.already-reserved",
+            "type": "text",
+            "text": {"body": "I want cake"},
+        },
+        msg_type="text",
+        msg_id="wamid.already-reserved",
+        contact_name="Duplicate Customer",
+    )
+
+    assert calls == {"reserve": 1, "haiku": 0, "sonnet": 0, "send": 0, "log": 0}
