@@ -12,11 +12,18 @@ Local Docker development starts PostgreSQL and Redis, then runs the backend with
 Uvicorn reload enabled. The worker and scheduler run as separate Celery services.
 The backend container mounts the source tree into `/app`.
 
-The backend lifespan currently calls `Base.metadata.create_all()` during startup.
-This allows missing ORM tables to be created, but it does not apply Alembic
-migrations, constraints, indexes, PostgreSQL policies, or data transformations.
-It remains in place during Phase 0 because the migration chain cannot build a
-clean database.
+The backend lifespan can call `Base.metadata.create_all()` during startup when
+`DATABASE_AUTO_CREATE_TABLES=true`. This remains the default for backward-compatible
+local development while existing environments are stabilized.
+
+Migration-controlled environments should set `DATABASE_AUTO_CREATE_TABLES=false`
+after Alembic migrations are applied. In that mode, startup skips automatic table
+creation and expects the schema to be managed by Alembic. The application still
+performs normal startup and shutdown, and the engine is disposed on shutdown.
+
+`create_all()` remains in the codebase during Phase 0. It is now controlled, not
+removed. It still does not apply Alembic migrations, constraints, indexes,
+PostgreSQL policies, or data transformations.
 
 ## Competing schema authorities
 
@@ -41,8 +48,10 @@ Migration repair must be a separate, reviewed change:
 5. Create additive repair migrations for existing installations; do not stamp an
    environment until its schema is proven equivalent to the baseline.
 6. Test both an empty-database upgrade and upgrades from deployed states.
-7. Only after those tests pass, remove startup `create_all()` and stop mounting
-   `schema.sql` for new database initialization.
+7. Disable startup `create_all()` in migration-controlled environments and prove
+   backend startup against an Alembic-created schema.
+8. Only after those tests pass across required environments, remove startup
+   `create_all()` and stop mounting `schema.sql` for new database initialization.
 
 Alembic should ultimately be the sole schema authority. This phase deliberately
 does not edit migrations or `database/schema.sql`.

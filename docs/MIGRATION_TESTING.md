@@ -67,6 +67,27 @@ These commands must use exactly the standalone file and project name. Do not app
 the active `docker-compose.yml`, do not use the active `postgres` service, and do
 not run volume-removal commands.
 
+## Backend startup with automatic schema creation disabled
+
+The backend supports `DATABASE_AUTO_CREATE_TABLES=false` for environments where
+Alembic is the schema authority. Use this only after running migrations against
+the disposable database. The isolated proof should:
+
+1. start `migration_test_postgres`;
+2. run `alembic upgrade head` against `nura_migration_test`;
+3. capture a schema fingerprint;
+4. start the backend in the one-off helper with `DATABASE_AUTO_CREATE_TABLES=false`;
+5. check `/health/live`, `/health`, and `/health/ready`;
+6. capture a second schema fingerprint and compare structural summaries.
+
+For this proof, point `REDIS_URL` at an intentionally unavailable local Redis URL
+unless an isolated Redis service is explicitly added. `/health/ready` should then
+return degraded with database `ok` and Redis `unavailable`. This proves the
+Alembic-created database is usable without relying on startup `create_all()`.
+
+Do not use the active backend service, active PostgreSQL service, active Redis
+service, or active database for this proof.
+
 ## Requirements for a future disposable test database
 
 A safe database must be:

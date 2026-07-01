@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://nura:nura_pass@localhost:5432/nura_db"
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
+    DATABASE_AUTO_CREATE_TABLES: bool = True
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379/0"

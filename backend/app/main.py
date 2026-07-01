@@ -39,9 +39,19 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 NURA API starting up...")
-    # Create tables (in production use Alembic migrations instead)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    if settings.DATABASE_AUTO_CREATE_TABLES:
+        if settings.ENVIRONMENT == "production":
+            logger.warning(
+                "Database auto-create is enabled in production; use Alembic-managed "
+                "schema and set DATABASE_AUTO_CREATE_TABLES=false"
+            )
+        logger.info("Database auto-create is enabled; running SQLAlchemy metadata create_all()")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    else:
+        logger.info(
+            "Database auto-create is disabled; expecting schema to be managed by Alembic"
+        )
     logger.info("✅ Database ready")
     yield
     logger.info("👋 NURA API shutting down...")
