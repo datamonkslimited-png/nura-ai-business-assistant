@@ -29,6 +29,17 @@ marked `migration_db` is skipped.
 - tmpfs database storage, with no named or active-stack volume;
 - no SQL bootstrap mount and no active NURA service dependency.
 
+It also defines a one-off helper service, `migration_test_capture`, for future
+catalog capture. The helper:
+
+- builds from the existing backend Dockerfile;
+- joins only `nura_migration_test_network`;
+- depends on `migration_test_postgres` being healthy;
+- connects only to `migration_test_postgres` / `nura_migration_test`;
+- runs `tests/migrations/catalog_capture.py` once and exits;
+- writes output to `/migration-output/schema-fingerprint.json`;
+- mounts `/tmp/nura-migration-test-output` from the host to `/migration-output`.
+
 Always use the separate Compose project name:
 
 ```bash
@@ -44,6 +55,9 @@ docker compose -p nura-migration-test \
 
 docker compose -p nura-migration-test \
   -f docker-compose.migration-test.yml ps
+
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml run --rm migration_test_capture
 
 docker compose -p nura-migration-test \
   -f docker-compose.migration-test.yml down
@@ -116,6 +130,21 @@ sanitize results, and pass only structural metadata to this utility.
 - writes normalized structural JSON to an explicitly supplied output file;
 - never includes or prints its database URL.
 
+The preferred future invocation is the isolated one-off helper container, after
+explicit approval to start the disposable service:
+
+```bash
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml run --rm migration_test_capture
+```
+
+The helper writes to:
+
+```text
+/tmp/nura-migration-test-output/schema-fingerprint.json
+```
+
+Host-side capture is still possible when local Python dependencies are available.
 Invoke it only after privately setting the two opt-in variables documented in the
 migration-test README:
 

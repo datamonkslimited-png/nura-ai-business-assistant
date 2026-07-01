@@ -9,7 +9,14 @@ from urllib.parse import urlsplit
 
 OPT_IN_ENV = "NURA_ALLOW_MIGRATION_TESTS"
 DATABASE_URL_ENV = "NURA_MIGRATION_TEST_DATABASE_URL"
-ALLOWED_HOSTS = {"localhost", "127.0.0.1", "::1", "postgres", "migration-postgres"}
+ALLOWED_HOSTS = {
+    "localhost",
+    "127.0.0.1",
+    "::1",
+    "postgres",
+    "migration-postgres",
+    "migration_test_postgres",
+}
 FORBIDDEN_DATABASES = {
     "nura_db",
     "postgres",
@@ -71,4 +78,3 @@ def require_disposable_database(
 
     validate_disposable_database_url(url)
     return url
-

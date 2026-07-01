@@ -33,13 +33,21 @@ other tenant data.
 ## Disposable PostgreSQL service
 
 The repository root contains `docker-compose.migration-test.yml`. It is standalone
-and must be invoked with the separate project name `nura-migration-test`. Its only
-service is `migration_test_postgres`; it uses database `nura_migration_test`, an
-isolated internal network, loopback-only port 55432, and tmpfs storage.
+and must be invoked with the separate project name `nura-migration-test`. Its
+database service is `migration_test_postgres`; it uses database
+`nura_migration_test`, an isolated internal network, loopback-only port 55432, and
+tmpfs storage.
 
 It does not reuse the active `postgres` service, `nura_db`, `postgres_data` volume,
-or `nura_network` network. The service is intentionally ephemeral and contains no
-application schema unless a future migration test creates one.
+or `nura_network` network. The database service is intentionally ephemeral and
+contains no application schema unless a future migration test creates one.
+
+The same Compose file also defines a one-off helper service named
+`migration_test_capture`. It uses the backend Dockerfile, joins only the isolated
+migration-test network, waits for `migration_test_postgres` to become healthy,
+runs `catalog_capture.py` once, and exits. It writes the structural fingerprint to
+`/migration-output/schema-fingerprint.json`, mounted from the host path
+`/tmp/nura-migration-test-output`.
 
 Validate configuration without starting it:
 
@@ -52,7 +60,21 @@ docker compose -p nura-migration-test \
 
 `catalog_capture.py` reads PostgreSQL catalogs inside an explicitly read-only
 transaction and writes only normalized structural metadata. It requires the same
-opt-in variables as database-backed tests and requires an output path:
+opt-in variables as database-backed tests and requires an output path.
+
+The preferred future path is the helper container, after explicit approval to
+start the disposable database and run the one-off capture:
+
+```bash
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml run --rm migration_test_capture
+```
+
+The helper command must be used only with the standalone migration-test Compose
+file and project name. Do not append the active Compose file, do not use the active
+backend service, and do not point capture at `nura_db`.
+
+Host-side capture remains possible when local Python dependencies are available:
 
 ```bash
 python tests/migrations/catalog_capture.py --output /tmp/schema-fingerprint.json

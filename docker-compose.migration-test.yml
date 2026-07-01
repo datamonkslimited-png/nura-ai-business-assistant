@@ -19,8 +19,31 @@ services:
     networks:
       - migration_test_network
 
+  migration_test_capture:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: "no"
+    working_dir: /app
+    environment:
+      NURA_ALLOW_MIGRATION_TESTS: "1"
+      NURA_MIGRATION_TEST_DATABASE_URL: postgresql+asyncpg://nura_migration_test@migration_test_postgres:5432/nura_migration_test
+    command:
+      [
+        "python",
+        "tests/migrations/catalog_capture.py",
+        "--output",
+        "/migration-output/schema-fingerprint.json",
+      ]
+    volumes:
+      - /tmp/nura-migration-test-output:/migration-output
+    depends_on:
+      migration_test_postgres:
+        condition: service_healthy
+    networks:
+      - migration_test_network
+
 networks:
   migration_test_network:
     name: nura_migration_test_network
     internal: true
-
