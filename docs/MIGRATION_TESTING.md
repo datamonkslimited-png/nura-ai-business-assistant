@@ -18,6 +18,41 @@ docker compose exec -T -e PYTHONDONTWRITEBYTECODE=1 backend \
 This command does not enable database-backed migration tests. Any future test
 marked `migration_db` is skipped.
 
+## Isolated disposable Compose environment
+
+`docker-compose.migration-test.yml` defines a standalone PostgreSQL service with:
+
+- service name `migration_test_postgres`;
+- database name `nura_migration_test`;
+- loopback-only host port 55432;
+- a dedicated internal `nura_migration_test_network` network;
+- tmpfs database storage, with no named or active-stack volume;
+- no SQL bootstrap mount and no active NURA service dependency.
+
+Always use the separate Compose project name:
+
+```bash
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml config --quiet
+```
+
+After explicit approval to run the disposable service, the lifecycle commands are:
+
+```bash
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml up -d migration_test_postgres
+
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml ps
+
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml down
+```
+
+These commands must use exactly the standalone file and project name. Do not append
+the active `docker-compose.yml`, do not use the active `postgres` service, and do
+not run volume-removal commands.
+
 ## Requirements for a future disposable test database
 
 A safe database must be:
@@ -70,6 +105,27 @@ It intentionally does not accept row data.
 
 Future catalog capture code should execute read-only PostgreSQL catalog queries,
 sanitize results, and pass only structural metadata to this utility.
+
+`tests/migrations/catalog_capture.py` now provides that guarded capture path. It:
+
+- validates the dedicated test target before connecting;
+- starts a transaction and issues `SET TRANSACTION READ ONLY`;
+- queries only `information_schema` and `pg_catalog`, plus the optional
+  `alembic_version` table;
+- never reads application table rows;
+- writes normalized structural JSON to an explicitly supplied output file;
+- never includes or prints its database URL.
+
+Invoke it only after privately setting the two opt-in variables documented in the
+migration-test README:
+
+```bash
+python tests/migrations/catalog_capture.py \
+  --output /tmp/nura-migration-schema-fingerprint.json
+```
+
+Inspect the output before committing it. It must contain structural metadata only,
+never customer data, messages, phone numbers, payment references, or credentials.
 
 ## How this supports Alembic repair
 

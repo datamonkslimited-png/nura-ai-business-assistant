@@ -30,3 +30,37 @@ The fixture JSON contains schema metadata only. Fixtures must never include tabl
 rows, customer details, messages, phones, payment references, credentials, or
 other tenant data.
 
+## Disposable PostgreSQL service
+
+The repository root contains `docker-compose.migration-test.yml`. It is standalone
+and must be invoked with the separate project name `nura-migration-test`. Its only
+service is `migration_test_postgres`; it uses database `nura_migration_test`, an
+isolated internal network, loopback-only port 55432, and tmpfs storage.
+
+It does not reuse the active `postgres` service, `nura_db`, `postgres_data` volume,
+or `nura_network` network. The service is intentionally ephemeral and contains no
+application schema unless a future migration test creates one.
+
+Validate configuration without starting it:
+
+```bash
+docker compose -p nura-migration-test \
+  -f docker-compose.migration-test.yml config --quiet
+```
+
+## Guarded catalog capture
+
+`catalog_capture.py` reads PostgreSQL catalogs inside an explicitly read-only
+transaction and writes only normalized structural metadata. It requires the same
+opt-in variables as database-backed tests and requires an output path:
+
+```bash
+python tests/migrations/catalog_capture.py --output /tmp/schema-fingerprint.json
+```
+
+Set the opt-in and dedicated URL privately in the invoking environment. Do not echo
+them or place them in shell history. The guard will reject active/default database
+names, non-test-looking names, remote hosts, and unsupported database schemes.
+
+Catalog capture must never be pointed at the active development database. Although
+the transaction is read-only, the disposable-only guard is intentional.
