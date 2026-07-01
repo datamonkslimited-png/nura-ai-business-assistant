@@ -16,6 +16,7 @@ from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.core.config import settings
 from app.core.database import engine
+from app.core import health as health_checks
 from app.models.base import Base
 import app.models  # noqa: F401 — ensure all models are registered
 from app.api.v1.router import api_router
@@ -82,6 +83,22 @@ app.include_router(api_router, prefix="/api/v1")
 @app.get("/health")
 async def health():
     return {"status": "ok", "version": settings.APP_VERSION, "env": settings.ENVIRONMENT}
+
+
+@app.get("/health/live")
+async def health_live():
+    """Process-only liveness probe. Does not access external dependencies."""
+    return {"status": "alive"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    """Readiness probe for dependencies required to serve application traffic."""
+    from fastapi.responses import JSONResponse
+
+    readiness = await health_checks.check_readiness()
+    status_code = 200 if readiness["status"] == "ready" else 503
+    return JSONResponse(status_code=status_code, content=readiness)
 
 
 @app.get("/")
