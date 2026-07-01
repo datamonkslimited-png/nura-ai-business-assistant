@@ -1,0 +1,59 @@
+{
+  "tables": {
+    "tenant_users": {
+      "columns": [
+        {"name": "id", "type": "UUID", "nullable": false, "default": null},
+        {"name": "tenant_id", "type": "UUID", "nullable": false, "default": null},
+        {"name": "supabase_user_id", "type": "UUID", "nullable": false, "default": null}
+      ],
+      "primary_key": ["id"],
+      "foreign_keys": [
+        {
+          "name": "fk_tenant_users_tenant_id_tenants",
+          "columns": ["tenant_id"],
+          "referred_table": "tenants",
+          "referred_columns": ["id"],
+          "on_delete": "CASCADE"
+        }
+      ],
+      "unique_constraints": [
+        {
+          "name": "uq_tenant_users_tenant_supabase_user",
+          "columns": ["tenant_id", "supabase_user_id"]
+        }
+      ],
+      "indexes": [
+        {
+          "name": "ix_tenant_users_supabase_user_id",
+          "columns": ["supabase_user_id"],
+          "unique": false,
+          "predicate": null
+        }
+      ]
+    },
+    "tenants": {
+      "columns": [
+        {"name": "id", "type": "UUID", "nullable": false, "default": null},
+        {"name": "business_name", "type": "VARCHAR(255)", "nullable": false, "default": null},
+        {"name": "status", "type": "tenant_status", "nullable": false, "default": "'trial'::tenant_status"}
+      ],
+      "primary_key": ["id"],
+      "foreign_keys": [],
+      "unique_constraints": [],
+      "indexes": [
+        {
+          "name": "ix_tenants_status",
+          "columns": ["status"],
+          "unique": false,
+          "predicate": null
+        }
+      ]
+    }
+  },
+  "enums": {
+    "tenant_status": ["trial", "active", "suspended", "cancelled"]
+  },
+  "extensions": ["uuid-ossp", "pg_trgm"],
+  "alembic_version": "canonical_head"
+}
+
